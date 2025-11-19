@@ -9,6 +9,7 @@ pipeline {
         MVN_OPTS       = "-DskipTests"
         DEPLOY_HOST    = "34.202.231.86"
         CONTAINER_NAME = "tomcat"
+        SONAR_AUTH_TOKEN = credentials('sonar-token') // <-- SonarQube token from Jenkins credentials
     }
 
     tools {
@@ -29,10 +30,13 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
+                // Must match the global Jenkins SonarQube installation name
                 withSonarQubeEnv('sonar-server') {
                     sh """
                         mvn clean verify sonar:sonar \
-                        -Dsonar.projectKey=${ARTIFACT_ID}
+                        -Dsonar.projectKey=${ARTIFACT_ID} \
+                        -Dsonar.host.url=http://34.202.231.86:9000 \
+                        -Dsonar.login=${SONAR_AUTH_TOKEN}
                     """
                 }
             }

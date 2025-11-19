@@ -81,16 +81,14 @@ pipeline {
 
         stage('Prepare Docker Context') {
             steps {
-                // Copy WAR to root as ROOT.war because Dockerfile expects it here
-                sh 'cp target/*.war ROOT.war'
+                sh 'cp target/*.war ROOT.war' // Dockerfile expects ROOT.war in root
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    // Build from repo root where Dockerfile lives
-                    sh 'docker build -t your-docker-repo/puzzle-game:latest .'
+                    sh 'docker build -t priyapranaya/pz-tomcat:latest .'
                 }
             }
         }
@@ -99,7 +97,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
-                    sh 'docker push your-docker-repo/puzzle-game:latest'
+                    sh 'docker push priyapranaya/pz-tomcat:latest'
                 }
             }
         }
@@ -109,7 +107,7 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
                     sh """
                         ssh -i $SSH_KEY ubuntu@your-ec2-ip \
-                        "docker pull your-docker-repo/puzzle-game:latest && \
+                        "docker pull priyapranaya/pz-tomcat:latest && \
                          docker-compose -f /path/to/docker-compose.yml up -d"
                     """
                 }

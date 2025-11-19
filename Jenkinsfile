@@ -2,14 +2,14 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_URL        = "http://34.202.231.86:8081/repository/maven-releases/"
-        DOCKER_REPO      = "priyapranaya/pz-tomcat"
-        GROUP_ID         = "com.example"
-        ARTIFACT_ID      = "puzzle-game-webapp"
-        MVN_OPTS         = "-DskipTests"
-        DEPLOY_HOST      = "34.202.231.86"
-        CONTAINER_NAME   = "tomcat"
-        SONAR_AUTH_TOKEN = credentials('sonar-token') // SonarQube token from Jenkins credentials
+        NEXUS_URL      = "http://34.202.231.86:8081/repository/maven-releases/"
+        DOCKER_REPO    = "priyapranaya/pz-tomcat"
+        GROUP_ID       = "com.example"
+        ARTIFACT_ID    = "puzzle-game-webapp"
+        MVN_OPTS       = "-DskipTests"
+        DEPLOY_HOST    = "34.202.231.86"
+        CONTAINER_NAME = "tomcat"
+        SONAR_AUTH_TOKEN = credentials('sonar-token') // Jenkins credential for SonarQube
     }
 
     tools {
@@ -31,19 +31,12 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    // Only run SonarQube if installation exists
-                    def sonarInstalled = tool name: 'sonar-server', type: 'hudson.plugins.sonar.SonarRunnerInstallation', ignoreMissing: true
-                    if (sonarInstalled) {
-                        withSonarQubeEnv('sonar-server') {
-                            sh """
-                                mvn clean verify sonar:sonar \
-                                -Dsonar.projectKey=${ARTIFACT_ID} \
-                                -Dsonar.login=${SONAR_AUTH_TOKEN}
-                            """
-                        }
-                    } else {
-                        echo "SonarQube server not configured. Skipping analysis."
-                    }
+                    sh """
+                        mvn clean verify sonar:sonar \
+                        -Dsonar.projectKey=${ARTIFACT_ID} \
+                        -Dsonar.host.url=http://34.202.231.86:9000 \
+                        -Dsonar.login=${SONAR_AUTH_TOKEN}
+                    """
                 }
             }
         }

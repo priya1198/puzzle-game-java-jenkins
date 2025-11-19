@@ -95,3 +95,25 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
                     sh 'docker push your-docker-repo/puzzle-game:latest'
+                }
+            }
+        }
+
+        stage('Deploy on EC2 via SSH') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
+                    sh '''
+                        ssh -i $SSH_KEY ubuntu@your-ec2-ip \
+                        "docker pull your-docker-repo/puzzle-game:latest && \
+                         docker-compose -f /path/to/docker-compose.yml up -d"
+                    '''
+                }
+            }
+        }
+    } // end stages
+
+    post {
+        success { echo "PIPELINE SUCCESS ✅" }
+        failure { echo "PIPELINE FAILED ❌" }
+    }
+} // end pipeline

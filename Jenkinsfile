@@ -2,18 +2,25 @@ pipeline {
     agent any
 
     environment {
-        // Tool names configured in Jenkins
-        JAVA_HOME = tool name: 'jdk', type: 'jdk'
-        MAVEN_HOME = tool name: 'maven', type: 'maven'
+        // Replace these with your actual Jenkins tool names
+        JAVA_HOME = tool name: 'OpenJDK 17', type: 'jdk'    // <-- Change 'OpenJDK 17' to your JDK name
+        MAVEN_HOME = tool name: 'Maven 3.8.8', type: 'maven' // <-- Change to your Maven name
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
+        SONAR_PROJECT_KEY = "puzzle-game-webapp"
+        SONAR_HOST_URL = "http://34.202.231.86:9000"
     }
 
     stages {
-
         stage('Checkout SCM') {
             steps {
-                echo "Checking out code..."
-                checkout scm
+                git(
+                    url: 'https://github.com/priya1198/puzzle-game-java-jenkins.git',
+                    branch: 'main',
+                    credentialsId: 'git'
+                )
+                script {
+                    echo "Checked out commit: ${GIT_COMMIT}"
+                }
             }
         }
 
@@ -21,10 +28,9 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN')]) {
                     sh """
-                        echo "Running SonarQube analysis..."
                         mvn clean verify sonar:sonar \
-                        -Dsonar.projectKey=puzzle-game-webapp \
-                        -Dsonar.host.url=http://34.202.231.86:9000 \
+                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                        -Dsonar.host.url=${SONAR_HOST_URL} \
                         -Dsonar.login=${SONAR_AUTH_TOKEN}
                     """
                 }
@@ -33,7 +39,6 @@ pipeline {
 
         stage('Quality Gate') {
             steps {
-                echo "Waiting for SonarQube Quality Gate..."
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
@@ -42,8 +47,7 @@ pipeline {
 
         stage('Build WAR') {
             steps {
-                echo "Building WAR file..."
-                sh "mvn clean package"
+                sh 'mvn clean package'
             }
         }
 
@@ -51,9 +55,8 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
                     sh """
-                        echo "Uploading WAR to Nexus..."
-                        curl -v -u ${NEXUS_USER}:${NEXUS_PASS} --upload-file target/puzzle-game.war \
-                        http://nexus-repo-url/repository/maven-releases/puzzle-game.war
+                        curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file target/puzzle-game-webapp.war \
+                        http://your-nexus-repo/repository/maven-releases/puzzle-game-webapp.war
                     """
                 }
             }
@@ -61,10 +64,7 @@ pipeline {
 
         stage('Prepare WAR for Docker') {
             steps {
-                sh """
-                    echo "Copying WAR for Docker..."
-                    cp target/puzzle-game.war docker/
-                """
+                sh 'cp target/puzzle-game-webapp.war docker/'
             }
         }
 
@@ -72,9 +72,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh """
-                        echo "Logging into Docker..."
-                        echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
-                        docker build -t priyapranaya/puzzle-game:latest docker/
+                        docker build -t puzzle-game-webapp:latest docker/
                     """
                 }
             }
@@ -82,17 +80,25 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-                sh "docker push priyapranaya/puzzle-game:latest"
+                withCredentials([usernamePassword(credentialsId: 'docker', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        docker push puzzle-game-webapp:latest
+                    """
+                }
             }
         }
 
         stage('Deploy on EC2 via SSH') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'ssh', keyFileVariable: 'EC2_KEY', usernameVariable: 'EC2_USER')]) {
+                sshagent(['ssh']) {
                     sh """
-                        echo "Deploying WAR on EC2..."
-                        scp -i ${EC2_KEY} docker/puzzle-game.war ${EC2_USER}@your.ec2.ip:/opt/tomcat/webapps/
-                        ssh -i ${EC2_KEY} ${EC2_USER}@your.ec2.ip 'sudo systemctl restart tomcat'
+                        ssh -o StrictHostKeyChecking=no ubuntu@your-ec2-ip '
+                            docker pull puzzle-game-webapp:latest &&
+                            docker stop puzzle-game-webapp || true &&
+                            docker rm puzzle-game-webapp || true &&
+                            docker run -d --name puzzle-game-webapp -p 8080:8080 puzzle-game-webapp:latest
+                        '
                     """
                 }
             }
@@ -101,7 +107,7 @@ pipeline {
 
     post {
         success {
-            echo "PIPELINE SUCCESS ✅"
+            echo "PIPELINE SUCCEEDED ✅"
         }
         failure {
             echo "PIPELINE FAILED ❌"

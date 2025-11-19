@@ -17,10 +17,10 @@ jobs:
       APP_NAME: "puzzle-game-webapp"
       DEPLOY_HOST: "34.202.231.86"
       DEPLOY_USER: "ubuntu"
-      CONTAINER_NAME: "puzzle-game"
-      TOMCAT_PORT: 8080
+      WAR_PATH: "/home/ubuntu/ROOT.war"
 
     steps:
+
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -31,20 +31,36 @@ jobs:
           java-version: 17
           cache: maven
 
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          mvn -B clean verify sonar:sonar \
+            -DskipTests=true \
+            -Dsonar.projectKey=${APP_NAME} \
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.login=${SONAR_TOKEN}
+
       - name: Build WAR
         run: mvn -B clean package -DskipTests=false
 
       - name: Upload WAR to Nexus
+        if: secrets.NEXUS_USER && secrets.NEXUS_PASS
         env:
           NEXUS_USER: ${{ secrets.NEXUS_USER }}
           NEXUS_PASS: ${{ secrets.NEXUS_PASS }}
         run: |
           WAR=$(ls target/*.war | head -n 1)
           VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          ARTIFACT_URL="${NEXUS_URL%/}/${GROUP_ID_PATH}/${APP_NAME}/${VERSION}/${APP_NAME}-${VERSION}.war"
-          curl -v -u "${NEXUS_USER}:${NEXUS_PASS}" --upload-file "$WAR" "$ARTIFACT_URL"
 
-      - name: Deploy on EC2 directly using Docker
+          ARTIFACT_URL="${NEXUS_URL%/}/${GROUP_ID_PATH}/${APP_NAME}/${VERSION}/${APP_NAME}-${VERSION}.war"
+
+          curl -v -u "${NEXUS_USER}:${NEXUS_PASS}" \
+               --upload-file "$WAR" \
+               "$ARTIFACT_URL"
+
+      - name: Deploy WAR to EC2
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ env.DEPLOY_HOST }}
@@ -52,18 +68,24 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            WAR_PATH="/home/ubuntu/ROOT.war"
+
+            echo "Writing SSH key to temporary file..."
+            echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/temp_key
+            chmod 600 /tmp/temp_key
 
             echo "Copying WAR to EC2..."
-            scp -i ${{ secrets.SSH_PRIVATE_KEY }} target/*.war ubuntu@${{ env.DEPLOY_HOST }}:$WAR_PATH
+            scp -i /tmp/temp_key target/*.war ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${WAR_PATH}
 
             echo "Stopping old container if exists..."
-            docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
-            docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+            docker stop puzzle-game 2>/dev/null || true
+            docker rm puzzle-game 2>/dev/null || true
 
-            echo "Running new Tomcat container..."
+            echo "Running new Tomcat container with the WAR..."
             docker run -d \
-              --name ${{ env.CONTAINER_NAME }} \
-              -p ${{ env.TOMCAT_PORT }}:8080 \
+              --name puzzle-game \
+              -p 8080:8080 \
               -v $WAR_PATH:/usr/local/tomcat/webapps/ROOT.war \
               tomcat:10.1.10-jdk17
+
+            echo "Cleaning up temporary SSH key..."
+            rm -f /tmp/temp_key

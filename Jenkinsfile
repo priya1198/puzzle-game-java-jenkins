@@ -2,15 +2,18 @@ pipeline {
     agent any
 
     environment {
-        JDK_NAME = 'JDK17'              
-        MAVEN_NAME = 'maven'            
-        NEXUS_CREDENTIALS = 'nexus'     
-        DOCKER_CREDENTIALS = 'docker'   
-        TOMCAT_CREDENTIALS = 'tomcat'   
+        JDK_NAME = 'JDK17'
+        MAVEN_NAME = 'maven'
+        NEXUS_CREDENTIALS = 'nexus'
+        DOCKER_CREDENTIALS = 'docker'
+        TOMCAT_CREDENTIALS = 'tomcat'
         SONAR_AUTH_TOKEN = 'sonar-token'
-        SONAR_HOST = 'http://34.202.231.86:9000' 
-        GIT_CREDENTIALS = 'git'         
-        SSH_CREDENTIALS = 'ssh'         
+        SONAR_HOST = 'http://34.202.231.86:9000'
+        GIT_CREDENTIALS = 'git'
+        SSH_CREDENTIALS = 'ssh'
+        DOCKER_IMAGE = 'priyapranaya/pz-tomcat:latest'
+        EC2_IP = 'EC2_PUBLIC_IP' // <-- Replace this with your EC2 public IP
+        DOCKER_COMPOSE_PATH = '/home/ubuntu/docker-compose.yml' // adjust path on EC2
     }
 
     stages {
@@ -69,7 +72,6 @@ pipeline {
                     script {
                         def warFile = sh(script: "ls target/*.war", returnStdout: true).trim()
                         def warFileName = warFile.tokenize('/').last()
-
                         sh """
                             curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file ${warFile} \
                             http://34.202.231.86:8081/repository/maven-releases/com/example/puzzle-game-webapp/1.0/${warFileName}
@@ -81,14 +83,16 @@ pipeline {
 
         stage('Prepare Docker Context') {
             steps {
-                sh 'cp target/*.war ROOT.war' // Dockerfile expects ROOT.war in root
+                // Copy WAR to root as ROOT.war because Dockerfile expects it here
+                sh 'cp target/*.war ROOT.war'
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'docker build -t priyapranaya/pz-tomcat:latest .'
+                    // Build from repo root where Dockerfile lives
+                    sh "docker build -t ${DOCKER_IMAGE} ."
                 }
             }
         }
@@ -96,8 +100,8 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
-                    sh 'docker push priyapranaya/pz-tomcat:latest'
+                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                    sh "docker push ${DOCKER_IMAGE}"
                 }
             }
         }
@@ -106,9 +110,9 @@ pipeline {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
                     sh """
-                        ssh -i $SSH_KEY ubuntu@your-ec2-ip \
-                        "docker pull priyapranaya/pz-tomcat:latest && \
-                         docker-compose -f /path/to/docker-compose.yml up -d"
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@${EC2_IP} \
+                        "docker pull ${DOCKER_IMAGE} && \
+                         docker-compose -f ${DOCKER_COMPOSE_PATH} up -d"
                     """
                 }
             }

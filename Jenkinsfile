@@ -2,19 +2,19 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_URL      = "http://34.202.231.86:8081/repository/maven-releases/"
-        DOCKER_REPO    = "priyapranaya/pz-tomcat"
-        GROUP_ID       = "com.example"
-        ARTIFACT_ID    = "puzzle-game-webapp"
-        MVN_OPTS       = "-DskipTests"
-        DEPLOY_HOST    = "34.202.231.86"
-        CONTAINER_NAME = "tomcat"
-        SONAR_AUTH_TOKEN = credentials('sonar-token') // Jenkins credential for SonarQube
+        NEXUS_URL       = "http://34.202.231.86:8081/repository/maven-releases/"
+        DOCKER_REPO     = "priyapranaya/pz-tomcat"
+        GROUP_ID        = "com.example"
+        ARTIFACT_ID     = "puzzle-game-webapp"
+        MVN_OPTS        = "-DskipTests"
+        DEPLOY_HOST     = "34.202.231.86"
+        CONTAINER_NAME  = "tomcat"
+        SONAR_AUTH_TOKEN = credentials('sonar-token') // Jenkins SonarQube token
     }
 
     tools {
-        maven "maven"
-        jdk   "JDK17"
+        maven "maven"  // Must match your Jenkins Maven installation name
+        jdk   "JDK17"  // Must match your Jenkins JDK installation name
     }
 
     stages {
@@ -30,7 +30,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                script {
+                withMaven(maven: 'maven') {
                     sh """
                         mvn clean verify sonar:sonar \
                         -Dsonar.projectKey=${ARTIFACT_ID} \

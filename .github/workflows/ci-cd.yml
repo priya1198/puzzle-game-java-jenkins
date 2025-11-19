@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DEPLOY_HOST: 34.202.231.86          # Your EC2 public IP
-      DEPLOY_USER: ubuntu                  # Your EC2 username
-      WAR_PATH: /home/ubuntu/ROOT.war     # Path on EC2 for WAR
+      DEPLOY_HOST: 34.202.231.86        # Your EC2 public IP
+      DEPLOY_USER: ubuntu                # Your EC2 username
+      REMOTE_WAR_PATH: /home/ubuntu/ROOT.war # Path on EC2 for WAR
 
     steps:
       - name: Checkout repository
@@ -27,20 +27,23 @@ jobs:
       - name: Build WAR file
         run: mvn clean package
 
-      - name: Show WAR file
-        run: ls -lh target/*.war
+      - name: Get WAR file path
+        id: get_war
+        run: echo "WAR_FILE=$(ls target/*.war | head -n1)" >> $GITHUB_ENV
 
       - name: Deploy WAR to EC2 and run Tomcat
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ env.DEPLOY_HOST }}
           username: ${{ env.DEPLOY_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}   # GitHub Secret with your private key
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
           script: |
             set -e
 
             echo "Copying WAR to EC2..."
-            scp -o StrictHostKeyChecking=no target/*.war ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.WAR_PATH }}
+            # Copy WAR from GitHub runner to EC2
+            scp -o StrictHostKeyChecking=no ${{ env.WAR_FILE }} ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.REMOTE_WAR_PATH }}
 
             echo "Stopping old container if exists..."
             docker stop puzzle-game 2>/dev/null || true
@@ -50,5 +53,5 @@ jobs:
             docker run -d \
               --name puzzle-game \
               -p 8080:8080 \
-              -v ${{ env.WAR_PATH }}:/usr/local/tomcat/webapps/ROOT.war \
+              -v ${{ env.REMOTE_WAR_PATH }}:/usr/local/tomcat/webapps/ROOT.war \
               tomcat:10.1.10-jdk17

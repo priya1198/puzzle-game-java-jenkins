@@ -5,13 +5,13 @@ pipeline {
         // Tool names must match your Jenkins Global Tool Configuration
         JDK_NAME = 'JDK17'           // Jenkins JDK config name
         MAVEN_NAME = 'maven'         // Jenkins Maven config name
-        NEXUS_CREDENTIALS = 'nexus'
-        DOCKER_CREDENTIALS = 'docker'
-        TOMCAT_CREDENTIALS = 'tomcat'
-        SONAR_AUTH_TOKEN = 'sonar-token'
-        SONAR_HOST = 'http://your-sonarqube-host:9000' // Replace with actual SonarQube host
-        GIT_CREDENTIALS = 'git'
-        SSH_CREDENTIALS = 'ssh'
+        NEXUS_CREDENTIALS = 'nexus'  // Replace with your Nexus credentials ID
+        DOCKER_CREDENTIALS = 'docker'// Replace with your DockerHub credentials ID
+        TOMCAT_CREDENTIALS = 'tomcat'// (If you need Tomcat creds, else remove)
+        SONAR_AUTH_TOKEN = 'sonar-token' // SonarQube token credential ID in Jenkins
+        SONAR_HOST = 'http://34.202.231.86:9000' // Your actual SonarQube host URL
+        GIT_CREDENTIALS = 'git'      // Git credentials ID
+        SSH_CREDENTIALS = 'ssh'      // SSH private key credentials ID for EC2
     }
 
     stages {
@@ -68,7 +68,10 @@ pipeline {
         stage('Upload WAR to Nexus') {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.NEXUS_CREDENTIALS, usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    sh 'curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file target/*.war http://your-nexus-repo/repository/maven-releases/'
+                    sh '''
+                        curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file target/*.war \
+                            http://your-nexus-repo/repository/maven-releases/
+                    '''
                 }
             }
         }
@@ -99,14 +102,11 @@ pipeline {
         stage('Deploy on EC2 via SSH') {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
-                    sh 'ssh -i $SSH_KEY ubuntu@your-ec2-ip "docker pull your-docker-repo/puzzle-game:latest && docker-compose -f /path/to/docker-compose.yml up -d"'
+                    sh '''
+                        ssh -i $SSH_KEY ubuntu@your-ec2-ip \
+                        "docker pull your-docker-repo/puzzle-game:latest && \
+                         docker-compose -f /path/to/docker-compose.yml up -d"
+                    '''
                 }
             }
         }
-    }
-
-    post {
-        success { echo "PIPELINE SUCCESS ✅" }
-        failure { echo "PIPELINE FAILED ❌" }
-    }
-}

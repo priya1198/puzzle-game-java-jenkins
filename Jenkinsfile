@@ -2,36 +2,66 @@ pipeline {
     agent any
 
     environment {
-        // Replace these with your actual Jenkins tool names
-        JAVA_HOME = tool name: 'OpenJDK 17', type: 'jdk'    // <-- Change 'OpenJDK 17' to your JDK name
-        MAVEN_HOME = tool name: 'Maven 3.8.8', type: 'maven' // <-- Change to your Maven name
-        PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
-        SONAR_PROJECT_KEY = "puzzle-game-webapp"
-        SONAR_HOST_URL = "http://34.202.231.86:9000"
+        // Replace these with the exact tool names configured in Jenkins Global Tool Configuration
+        JDK_NAME = 'jdk-17'      // <-- Make sure this matches your JDK installation in Jenkins
+        MAVEN_NAME = 'Maven 3.8' // <-- Make sure this matches your Maven installation in Jenkins
+
+        // SonarQube token (from Jenkins Credentials)
+        SONAR_AUTH_TOKEN = credentials('sonar-token')
+
+        // Nexus repository credentials
+        NEXUS_CREDENTIALS = credentials('nexus')
+
+        // Docker registry credentials
+        DOCKER_CREDENTIALS = credentials('docker')
+
+        // Git credentials
+        GIT_CREDENTIALS = credentials('git')
+
+        // Tomcat credentials
+        TOMCAT_CREDENTIALS = credentials('tomcat')
+
+        // SSH credentials for EC2
+        SSH_CREDENTIALS = 'ssh'
+
+        // Docker image variables
+        DOCKER_IMAGE = 'puzzle-game'
+        DOCKER_TAG = 'latest'
     }
 
     stages {
         stage('Checkout SCM') {
             steps {
-                git(
+                git branch: 'main',
                     url: 'https://github.com/priya1198/puzzle-game-java-jenkins.git',
-                    branch: 'main',
                     credentialsId: 'git'
-                )
                 script {
-                    echo "Checked out commit: ${GIT_COMMIT}"
+                    echo "Checked out commit: ${env.GIT_COMMIT}"
+                }
+            }
+        }
+
+        stage('Tool Setup') {
+            steps {
+                script {
+                    env.JAVA_HOME = tool name: env.JDK_NAME, type: 'jdk'
+                    env.PATH = "${env.JAVA_HOME}/bin:${env.PATH}"
+                    env.MAVEN_HOME = tool name: env.MAVEN_NAME, type: 'maven'
+                    env.PATH = "${env.MAVEN_HOME}/bin:${env.PATH}"
+                    sh 'java -version'
+                    sh 'mvn -version'
                 }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN')]) {
+                withEnv(["SONAR_TOKEN=${env.SONAR_AUTH_TOKEN}"]) {
                     sh """
                         mvn clean verify sonar:sonar \
-                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.login=${SONAR_AUTH_TOKEN}
+                            -Dsonar.projectKey=puzzle-game-webapp \
+                            -Dsonar.host.url=http://34.202.231.86:9000 \
+                            -Dsonar.login=$SONAR_TOKEN
                     """
                 }
             }
@@ -55,8 +85,8 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
                     sh """
-                        curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file target/puzzle-game-webapp.war \
-                        http://your-nexus-repo/repository/maven-releases/puzzle-game-webapp.war
+                        curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file target/puzzle-game.war \
+                        http://your-nexus-repo/repository/maven-releases/puzzle-game.war
                     """
                 }
             }
@@ -64,7 +94,7 @@ pipeline {
 
         stage('Prepare WAR for Docker') {
             steps {
-                sh 'cp target/puzzle-game-webapp.war docker/'
+                sh 'cp target/puzzle-game.war docker/'
             }
         }
 
@@ -72,7 +102,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh """
-                        docker build -t puzzle-game-webapp:latest docker/
+                        docker build -t $DOCKER_IMAGE:$DOCKER_TAG docker/
                     """
                 }
             }
@@ -83,7 +113,7 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'docker', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh """
                         echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker push puzzle-game-webapp:latest
+                        docker push $DOCKER_IMAGE:$DOCKER_TAG
                     """
                 }
             }
@@ -91,13 +121,13 @@ pipeline {
 
         stage('Deploy on EC2 via SSH') {
             steps {
-                sshagent(['ssh']) {
+                sshagent([env.SSH_CREDENTIALS]) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@your-ec2-ip '
-                            docker pull puzzle-game-webapp:latest &&
-                            docker stop puzzle-game-webapp || true &&
-                            docker rm puzzle-game-webapp || true &&
-                            docker run -d --name puzzle-game-webapp -p 8080:8080 puzzle-game-webapp:latest
+                        ssh -o StrictHostKeyChecking=no ubuntu@<EC2_PUBLIC_IP> '
+                        docker pull $DOCKER_IMAGE:$DOCKER_TAG &&
+                        docker stop puzzle-game || true &&
+                        docker rm puzzle-game || true &&
+                        docker run -d --name puzzle-game -p 8080:8080 $DOCKER_IMAGE:$DOCKER_TAG
                         '
                     """
                 }
@@ -107,7 +137,7 @@ pipeline {
 
     post {
         success {
-            echo "PIPELINE SUCCEEDED ✅"
+            echo "PIPELINE SUCCESS ✅"
         }
         failure {
             echo "PIPELINE FAILED ❌"

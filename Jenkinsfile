@@ -3,19 +3,18 @@ pipeline {
 
     environment {
         // Tool names must match your Jenkins Global Tool Configuration
-        JDK_NAME = 'JDK17'           // Jenkins JDK config name
-        MAVEN_NAME = 'maven'         // Jenkins Maven config name
-        NEXUS_CREDENTIALS = 'nexus'  // Replace with your Nexus credentials ID
-        DOCKER_CREDENTIALS = 'docker'// Replace with your DockerHub credentials ID
-        TOMCAT_CREDENTIALS = 'tomcat'// (If you need Tomcat creds, else remove)
-        SONAR_AUTH_TOKEN = 'sonar-token' // SonarQube token credential ID in Jenkins
-        SONAR_HOST = 'http://34.202.231.86:9000' // Your actual SonarQube host URL
-        GIT_CREDENTIALS = 'git'      // Git credentials ID
-        SSH_CREDENTIALS = 'ssh'      // SSH private key credentials ID for EC2
+        JDK_NAME = 'JDK17'              // Jenkins JDK config name
+        MAVEN_NAME = 'maven'            // Jenkins Maven config name
+        NEXUS_CREDENTIALS = 'nexus'     // Nexus credentials ID in Jenkins
+        DOCKER_CREDENTIALS = 'docker'   // DockerHub credentials ID in Jenkins
+        TOMCAT_CREDENTIALS = 'tomcat'   // Tomcat credentials ID (if used)
+        SONAR_AUTH_TOKEN = 'sonar-token'// SonarQube token credential ID in Jenkins
+        SONAR_HOST = 'http://34.202.231.86:9000' // SonarQube server URL
+        GIT_CREDENTIALS = 'git'         // Git credentials ID
+        SSH_CREDENTIALS = 'ssh'         // SSH private key credentials ID for EC2
     }
 
     stages {
-
         stage('Checkout SCM') {
             steps {
                 git branch: 'main',
@@ -68,10 +67,16 @@ pipeline {
         stage('Upload WAR to Nexus') {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.NEXUS_CREDENTIALS, usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    sh '''
-                        curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file target/*.war \
-                            http://your-nexus-repo/repository/maven-releases/
-                    '''
+                    script {
+                        // Resolve WAR filename dynamically
+                        def warFile = sh(script: "ls target/*.war", returnStdout: true).trim()
+                        def warFileName = warFile.tokenize('/').last()
+
+                        sh """
+                            curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file ${warFile} \
+                            http://34.202.231.86:8081/repository/maven-releases/com/example/puzzle-game-webapp/1.0/${warFileName}
+                        """
+                    }
                 }
             }
         }
@@ -102,11 +107,11 @@ pipeline {
         stage('Deploy on EC2 via SSH') {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
-                    sh '''
+                    sh """
                         ssh -i $SSH_KEY ubuntu@your-ec2-ip \
                         "docker pull your-docker-repo/puzzle-game:latest && \
                          docker-compose -f /path/to/docker-compose.yml up -d"
-                    '''
+                    """
                 }
             }
         }

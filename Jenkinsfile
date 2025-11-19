@@ -2,41 +2,37 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_URL       = "http://34.202.231.86:8081/repository/maven-releases/"
-        DOCKER_REPO     = "priyapranaya/pz-tomcat"
-        GROUP_ID        = "com.example"
-        ARTIFACT_ID     = "puzzle-game-webapp"
-        MVN_OPTS        = "-DskipTests"
-        DEPLOY_HOST     = "34.202.231.86"
-        CONTAINER_NAME  = "tomcat"
-        SONAR_AUTH_TOKEN = credentials('sonar-token') // Jenkins SonarQube token
+        ARTIFACT_ID = 'puzzle-game-webapp'
+        SONAR_HOST_URL = 'http://34.202.231.86:9000'
     }
 
     tools {
-        maven "maven"  // Must match your Jenkins Maven installation name
-        jdk   "JDK17"  // Must match your Jenkins JDK installation name
+        maven 'maven'
+        jdk 'JDK17'
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 checkout scm
                 script {
-                    echo "Commit: ${env.GIT_COMMIT ?: 'local'}"
+                    echo "Checked out commit: ${env.GIT_COMMIT}"
                 }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                withMaven(maven: 'maven') {
-                    sh """
-                        mvn clean verify sonar:sonar \
-                        -Dsonar.projectKey=${ARTIFACT_ID} \
-                        -Dsonar.host.url=http://34.202.231.86:9000 \
-                        -Dsonar.login=${SONAR_AUTH_TOKEN}
-                    """
+                withCredentials([string(credentialsId: 'SONAR_AUTH_TOKEN', variable: 'SONAR_AUTH_TOKEN')]) {
+                    script {
+                        def mvnHome = tool 'maven'
+                        sh """
+                            ${mvnHome}/bin/mvn clean verify sonar:sonar \
+                            -Dsonar.projectKey=${ARTIFACT_ID} \
+                            -Dsonar.host.url=${SONAR_HOST_URL} \
+                            -Dsonar.login=${SONAR_AUTH_TOKEN}
+                        """
+                    }
                 }
             }
         }
@@ -51,97 +47,62 @@ pipeline {
 
         stage('Build WAR') {
             steps {
-                sh "mvn clean package ${MVN_OPTS}"
+                script {
+                    def mvnHome = tool 'maven'
+                    sh "${mvnHome}/bin/mvn clean package"
+                }
             }
         }
 
         stage('Upload WAR to Nexus') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'nexus',
-                    usernameVariable: 'NEXUS_USER',
-                    passwordVariable: 'NEXUS_PASS'
-                )]) {
-                    script {
-                        def WAR = sh(script: "ls target/*.war | head -n 1", returnStdout: true).trim()
-                        if (!fileExists(WAR)) { error "WAR not found at ${WAR}" }
-
-                        def VERSION = sh(
-                            script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
-                            returnStdout: true
-                        ).trim()
-
-                        def ARTIFACT_PATH =
-                            "${GROUP_ID.replace('.','/')}/${ARTIFACT_ID}/${VERSION}/${ARTIFACT_ID}-${VERSION}.war"
-
-                        echo "Uploading ${WAR} → ${NEXUS_URL}${ARTIFACT_PATH}"
-
-                        sh """
-                            curl -v -u ${NEXUS_USER}:${NEXUS_PASS} \
-                            --upload-file ${WAR} \
-                            "${NEXUS_URL}${ARTIFACT_PATH}"
-                        """
-                    }
+                withCredentials([
+                    usernamePassword(credentialsId: 'NEXUS_CREDENTIALS', 
+                                     usernameVariable: 'NEXUS_USER', 
+                                     passwordVariable: 'NEXUS_PASSWORD')
+                ]) {
+                    sh """
+                        curl -v -u $NEXUS_USER:$NEXUS_PASSWORD --upload-file target/${ARTIFACT_ID}.war \
+                        http://nexus.example.com/repository/maven-releases/${ARTIFACT_ID}.war
+                    """
                 }
             }
         }
 
         stage('Prepare WAR for Docker') {
             steps {
-                sh """
-                    set -e
-                    WAR=\$(ls target/*.war | head -n1)
-                    if [ -z "\$WAR" ]; then echo "No WAR found"; exit 1; fi
-
-                    cp -f "\$WAR" target/app.war
-                    ls -lh target/app.war
-                """
+                sh "cp target/${ARTIFACT_ID}.war docker/"
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    def shortCommit = (env.GIT_COMMIT ?: 'local').take(7)
-
-                    sh """
-                        docker build -t ${DOCKER_REPO}:${shortCommit} .
-                        docker tag ${DOCKER_REPO}:${shortCommit} ${DOCKER_REPO}:latest
-                    """
-                }
+                sh "docker build -t ${ARTIFACT_ID}:latest docker/"
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    script {
-                        def shortCommit = (env.GIT_COMMIT ?: 'local').take(7)
-
-                        sh """
-                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-                            docker push ${DOCKER_REPO}:${shortCommit}
-                            docker push ${DOCKER_REPO}:latest
-                        """
-                    }
+                withCredentials([usernamePassword(credentialsId: 'DOCKER_CREDENTIALS', 
+                                                  usernameVariable: 'DOCKER_USER', 
+                                                  passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        docker tag ${ARTIFACT_ID}:latest mydockerhub/${ARTIFACT_ID}:latest
+                        docker push mydockerhub/${ARTIFACT_ID}:latest
+                    """
                 }
             }
         }
 
-        stage('Deploy on same EC2 via SSH') {
+        stage('Deploy on EC2 via SSH') {
             steps {
-                sshagent(['docker-server']) {
+                withCredentials([sshUserPrivateKey(credentialsId: 'EC2_SSH_KEY', 
+                                                   keyFileVariable: 'SSH_KEY', 
+                                                   usernameVariable: 'SSH_USER')]) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${DEPLOY_HOST} '
-                            docker stop ${CONTAINER_NAME} 2>/dev/null || true &&
-                            docker rm ${CONTAINER_NAME} 2>/dev/null || true &&
-                            docker pull ${DOCKER_REPO}:latest &&
-                            docker run -d --name ${CONTAINER_NAME} -p 8080:8080 --restart unless-stopped ${DOCKER_REPO}:latest
-                        '
+                        scp -i $SSH_KEY docker/${ARTIFACT_ID}.war $SSH_USER@ec2-instance:/opt/app/
+                        ssh -i $SSH_KEY $SSH_USER@ec2-instance 'docker stop ${ARTIFACT_ID} || true && docker rm ${ARTIFACT_ID} || true && docker run -d --name ${ARTIFACT_ID} -p 8080:8080 mydockerhub/${ARTIFACT_ID}:latest'
                     """
                 }
             }
@@ -149,7 +110,11 @@ pipeline {
     }
 
     post {
-        success { echo "PIPELINE SUCCEEDED 🎉" }
-        failure { echo "PIPELINE FAILED ❌" }
+        success {
+            echo "PIPELINE SUCCESS ✅"
+        }
+        failure {
+            echo "PIPELINE FAILED ❌"
+        }
     }
 }

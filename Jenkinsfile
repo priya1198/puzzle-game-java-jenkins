@@ -2,20 +2,18 @@ pipeline {
     agent any
 
     environment {
-        // Tool names must match Jenkins Global Tool Configuration
-        JDK_NAME = 'JDK17'
-        MAVEN_NAME = 'maven'
-        NEXUS_CREDENTIALS = 'nexus'
-        DOCKER_CREDENTIALS = 'docker'
-        TOMCAT_CREDENTIALS = 'tomcat'
+        JDK_NAME = 'JDK17'              
+        MAVEN_NAME = 'maven'            
+        NEXUS_CREDENTIALS = 'nexus'     
+        DOCKER_CREDENTIALS = 'docker'   
+        TOMCAT_CREDENTIALS = 'tomcat'   
         SONAR_AUTH_TOKEN = 'sonar-token'
-        SONAR_HOST = 'http://34.202.231.86:9000'
-        GIT_CREDENTIALS = 'git'
-        SSH_CREDENTIALS = 'ssh'
+        SONAR_HOST = 'http://34.202.231.86:9000' 
+        GIT_CREDENTIALS = 'git'         
+        SSH_CREDENTIALS = 'ssh'         
     }
 
     stages {
-
         stage('Checkout SCM') {
             steps {
                 git branch: 'main',
@@ -83,28 +81,16 @@ pipeline {
 
         stage('Prepare Docker Context') {
             steps {
-                script {
-                    // Ensure docker folder exists
-                    sh 'mkdir -p docker'
-
-                    // Copy WAR as ROOT.war into docker folder
-                    sh 'cp target/*.war docker/ROOT.war'
-
-                    // Ensure Dockerfile exists
-                    def dockerfilePath = 'docker/Dockerfile'
-                    if (!fileExists(dockerfilePath)) {
-                        error "Dockerfile not found at ${dockerfilePath}. Please add a Dockerfile."
-                    } else {
-                        echo "Dockerfile found at ${dockerfilePath}"
-                    }
-                }
+                // Copy WAR to root as ROOT.war because Dockerfile expects it here
+                sh 'cp target/*.war ROOT.war'
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'docker build -t your-docker-repo/puzzle-game:latest docker/'
+                    // Build from repo root where Dockerfile lives
+                    sh 'docker build -t your-docker-repo/puzzle-game:latest .'
                 }
             }
         }

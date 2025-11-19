@@ -3,18 +3,19 @@ pipeline {
 
     environment {
         // Tool names must match your Jenkins Global Tool Configuration
-        JDK_NAME = 'JDK17'              // Jenkins JDK config name
-        MAVEN_NAME = 'maven'            // Jenkins Maven config name
-        NEXUS_CREDENTIALS = 'nexus'     // Nexus credentials ID in Jenkins
-        DOCKER_CREDENTIALS = 'docker'   // DockerHub credentials ID in Jenkins
-        TOMCAT_CREDENTIALS = 'tomcat'   // Tomcat credentials ID (if used)
-        SONAR_AUTH_TOKEN = 'sonar-token'// SonarQube token credential ID in Jenkins
-        SONAR_HOST = 'http://34.202.231.86:9000' // SonarQube server URL
-        GIT_CREDENTIALS = 'git'         // Git credentials ID
-        SSH_CREDENTIALS = 'ssh'         // SSH private key credentials ID for EC2
+        JDK_NAME = 'JDK17'
+        MAVEN_NAME = 'maven'
+        NEXUS_CREDENTIALS = 'nexus'
+        DOCKER_CREDENTIALS = 'docker'
+        TOMCAT_CREDENTIALS = 'tomcat'
+        SONAR_AUTH_TOKEN = 'sonar-token'
+        SONAR_HOST = 'http://34.202.231.86:9000'
+        GIT_CREDENTIALS = 'git'
+        SSH_CREDENTIALS = 'ssh'
     }
 
     stages {
+
         stage('Checkout SCM') {
             steps {
                 git branch: 'main',
@@ -68,7 +69,6 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.NEXUS_CREDENTIALS, usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
                     script {
-                        // Resolve WAR filename dynamically
                         def warFile = sh(script: "ls target/*.war", returnStdout: true).trim()
                         def warFileName = warFile.tokenize('/').last()
 
@@ -83,7 +83,10 @@ pipeline {
 
         stage('Prepare WAR for Docker') {
             steps {
-                sh 'cp target/*.war docker/'
+                // Ensure docker folder exists
+                sh 'mkdir -p docker'
+                // Copy WAR as ROOT.war
+                sh 'cp target/*.war docker/ROOT.war'
             }
         }
 
@@ -121,4 +124,4 @@ pipeline {
         success { echo "PIPELINE SUCCESS ✅" }
         failure { echo "PIPELINE FAILED ❌" }
     }
-} // end pipeline
+}

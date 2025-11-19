@@ -2,17 +2,17 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_URL      = "http://54.81.139.84:8081/repository/maven-releases/"
-        DOCKER_REPO    = "saikumar7596/my-repo"
+        NEXUS_URL      = "http://34.202.231.86:8081/repository/maven-releases/"
+        DOCKER_REPO    = "priyapranaya/pz-tomcat"
         GROUP_ID       = "com.example"
         ARTIFACT_ID    = "puzzle-game-webapp"
         MVN_OPTS       = "-DskipTests"
-        DEPLOY_HOST    = "54.81.139.84"
+        DEPLOY_HOST    = "34.202.231.86"
         CONTAINER_NAME = "tomcat"
     }
 
     tools {
-        maven "Maven"
+        maven "maven"
         jdk   "JDK17"
     }
 

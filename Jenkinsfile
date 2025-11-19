@@ -3,8 +3,8 @@ pipeline {
 
     environment {
         // Tool names must match your Jenkins Global Tool Configuration
-        JDK_NAME = 'JDK17'
-        MAVEN_NAME = 'Maven 3.8'      // Replace with your Maven installation name
+        JDK_NAME = 'JDK17'           // Ensure this is the exact name in Jenkins JDK config
+        MAVEN_NAME = 'maven'         // Must match the Maven tool name configured in Jenkins
         NEXUS_CREDENTIALS = 'nexus'
         DOCKER_CREDENTIALS = 'docker'
         TOMCAT_CREDENTIALS = 'tomcat'
@@ -33,6 +33,8 @@ pipeline {
                     env.PATH = "${env.JAVA_HOME}/bin:${env.PATH}"
                     env.MAVEN_HOME = tool name: env.MAVEN_NAME, type: 'maven'
                     env.PATH = "${env.MAVEN_HOME}/bin:${env.PATH}"
+
+                    // Verify tool versions
                     sh 'java -version'
                     sh 'mvn -version'
                 }
@@ -42,14 +44,14 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: env.SONAR_AUTH_TOKEN, variable: 'SONAR_TOKEN')]) {
-                    sh "mvn sonar:sonar -Dsonar.login=${SONAR_TOKEN}"
+                    sh 'mvn sonar:sonar -Dsonar.login=${SONAR_TOKEN}'
                 }
             }
         }
 
         stage('Quality Gate') {
             steps {
-                echo "Quality gate stage would go here"
+                echo "Quality gate stage would go here (implement if using SonarQube Quality Gate)."
             }
         }
 

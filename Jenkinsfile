@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // Tool names must match your Jenkins Global Tool Configuration
+        // Tool names must match Jenkins Global Tool Configuration
         JDK_NAME = 'JDK17'
         MAVEN_NAME = 'maven'
         NEXUS_CREDENTIALS = 'nexus'
@@ -81,12 +81,23 @@ pipeline {
             }
         }
 
-        stage('Prepare WAR for Docker') {
+        stage('Prepare Docker Context') {
             steps {
-                // Ensure docker folder exists
-                sh 'mkdir -p docker'
-                // Copy WAR as ROOT.war
-                sh 'cp target/*.war docker/ROOT.war'
+                script {
+                    // Ensure docker folder exists
+                    sh 'mkdir -p docker'
+
+                    // Copy WAR as ROOT.war into docker folder
+                    sh 'cp target/*.war docker/ROOT.war'
+
+                    // Ensure Dockerfile exists
+                    def dockerfilePath = 'docker/Dockerfile'
+                    if (!fileExists(dockerfilePath)) {
+                        error "Dockerfile not found at ${dockerfilePath}. Please add a Dockerfile."
+                    } else {
+                        echo "Dockerfile found at ${dockerfilePath}"
+                    }
+                }
             }
         }
 
@@ -118,7 +129,7 @@ pipeline {
                 }
             }
         }
-    } // end stages
+    }
 
     post {
         success { echo "PIPELINE SUCCESS ✅" }

@@ -3,12 +3,13 @@ pipeline {
 
     environment {
         // Tool names must match your Jenkins Global Tool Configuration
-        JDK_NAME = 'JDK17'           // Ensure this is the exact name in Jenkins JDK config
-        MAVEN_NAME = 'maven'         // Must match the Maven tool name configured in Jenkins
+        JDK_NAME = 'JDK17'           // Jenkins JDK config name
+        MAVEN_NAME = 'maven'         // Jenkins Maven config name
         NEXUS_CREDENTIALS = 'nexus'
         DOCKER_CREDENTIALS = 'docker'
         TOMCAT_CREDENTIALS = 'tomcat'
         SONAR_AUTH_TOKEN = 'sonar-token'
+        SONAR_HOST = 'http://your-sonarqube-host:9000' // Replace with actual SonarQube host
         GIT_CREDENTIALS = 'git'
         SSH_CREDENTIALS = 'ssh'
     }
@@ -34,7 +35,6 @@ pipeline {
                     env.MAVEN_HOME = tool name: env.MAVEN_NAME, type: 'maven'
                     env.PATH = "${env.MAVEN_HOME}/bin:${env.PATH}"
 
-                    // Verify tool versions
                     sh 'java -version'
                     sh 'mvn -version'
                 }
@@ -44,14 +44,18 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: env.SONAR_AUTH_TOKEN, variable: 'SONAR_TOKEN')]) {
-                    sh 'mvn sonar:sonar -Dsonar.login=${SONAR_TOKEN}'
+                    sh """
+                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
+                            -Dsonar.host.url=${SONAR_HOST} \
+                            -Dsonar.login=${SONAR_TOKEN}
+                    """
                 }
             }
         }
 
         stage('Quality Gate') {
             steps {
-                echo "Quality gate stage would go here (implement if using SonarQube Quality Gate)."
+                echo "Quality gate stage can be implemented if SonarQube webhook is used."
             }
         }
 
@@ -102,11 +106,7 @@ pipeline {
     }
 
     post {
-        success {
-            echo "PIPELINE SUCCESS ✅"
-        }
-        failure {
-            echo "PIPELINE FAILED ❌"
-        }
+        success { echo "PIPELINE SUCCESS ✅" }
+        failure { echo "PIPELINE FAILED ❌" }
     }
 }

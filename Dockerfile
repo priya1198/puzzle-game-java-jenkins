@@ -1,4 +1,4 @@
-# -------- Final Tomcat Image --------
+# Use official Tomcat image with JDK 17
 FROM tomcat:10.1.10-jdk17
 
 # Set working directory
@@ -8,16 +8,15 @@ WORKDIR /usr/local/tomcat
 RUN rm -rf webapps/ROOT
 
 # Copy WAR built by Jenkins into ROOT.war
-# Make sure the WAR name matches the actual WAR generated
-COPY target/puzzle-game-webapp-1.0.war webapps/ROOT.war
+COPY ROOT.war webapps/ROOT.war
 
 # Expose Tomcat port
 EXPOSE 8080
 
-# Set user to Tomcat (non-root) for security
+# Run Tomcat as non-root user
 USER 1000:1000
 
-# Optional: Healthcheck to monitor container
+# Optional healthcheck
 HEALTHCHECK --interval=30s --timeout=5s \
   CMD curl -f http://localhost:8080/ || exit 1
 
